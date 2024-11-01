@@ -1,5 +1,6 @@
 // lib/screens/chat_screen.dart
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Message {
   final String text;
@@ -22,23 +23,8 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
-  final List<Message> _messages = [
-    Message(
-      text: "안녕하세요! 치킨 파티원 구합니다~",
-      isMe: false,
-      time: "오후 2:30",
-    ),
-    Message(
-      text: "저 참여하고 싶습니다!",
-      isMe: true,
-      time: "오후 2:31",
-    ),
-    Message(
-      text: "네 좋습니다! 인원은 4명 구하고 있어요",
-      isMe: false,
-      time: "오후 2:32",
-    ),
-  ];
+  final CollectionReference _messagesCollection =
+  FirebaseFirestore.instance.collection('messages'); // Firestore 컬렉션 참조
 
   @override
   void dispose() {
@@ -46,16 +32,16 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  void _handleSubmitted(String text) {
+  void _handleSubmitted(String text) async {
     if (text.isEmpty) return;
 
     _controller.clear();
-    setState(() {
-      _messages.add(Message(
-        text: text,
-        isMe: true,
-        time: "방금 전",
-      ));
+
+    // Firestore에 메시지 추가
+    await _messagesCollection.add({
+      'text': text,
+      'isMe': true,
+      'createdAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -98,102 +84,124 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(8.0),
-              reverse: false,
-              itemCount: _messages.length,
-              itemBuilder: (_, index) {
-                final message = _messages[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Row(
-                    mainAxisAlignment: message.isMe
-                        ? MainAxisAlignment.end
-                        : MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (!message.isMe) ...[
-                        const CircleAvatar(
-                          backgroundColor: Color(0xFFE6E6FA),
-                          radius: 15,
-                          child: Text(
-                            '파티장',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.black,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      Column(
-                        crossAxisAlignment: message.isMe
-                            ? CrossAxisAlignment.end
-                            : CrossAxisAlignment.start,
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _messagesCollection
+                  .orderBy('createdAt', descending: true)
+                  .snapshots(), // Firestore에서 메시지 스트림 가져오기
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(child: Text('오류 발생'));
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final messages = snapshot.data!.docs;
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(8.0),
+                  reverse: true, // 최신 메시지가 위로 오도록 설정
+                  itemCount: messages.length,
+                  itemBuilder: (_, index) {
+                    final messageData = messages[index];
+                    final message = Message(
+                      text: messageData['text'],
+                      isMe: messageData['isMe'],
+                      time: "방금 전", // 메시지 시간 표시를 추가할 수 있음
+                    );
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: Row(
+                        mainAxisAlignment: message.isMe
+                            ? MainAxisAlignment.end
+                            : MainAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          if (!message.isMe)
-                            const Padding(
-                              padding: EdgeInsets.only(left: 4, bottom: 4),
+                          if (!message.isMe) ...[
+                            const CircleAvatar(
+                              backgroundColor: Color(0xFFE6E6FA),
+                              radius: 15,
                               child: Text(
                                 '파티장',
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
+                                  fontSize: 10,
+                                  color: Colors.black,
                                 ),
                               ),
                             ),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                            const SizedBox(width: 8),
+                          ],
+                          Column(
+                            crossAxisAlignment: message.isMe
+                                ? CrossAxisAlignment.end
+                                : CrossAxisAlignment.start,
                             children: [
-                              if (message.isMe)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 4),
-                                  child: Text(
-                                    message.time,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                              Container(
-                                constraints: BoxConstraints(
-                                  maxWidth: MediaQuery.of(context).size.width * 0.7,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: message.isMe
-                                      ? const Color(0xFFE6E6FA)  // 라벤더색
-                                      : const Color(0xFFF0F0F0), // 회색
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  message.text,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ),
                               if (!message.isMe)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 4),
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 4, bottom: 4),
                                   child: Text(
-                                    message.time,
-                                    style: const TextStyle(
+                                    '파티장',
+                                    style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.grey,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  if (message.isMe)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 4),
+                                      child: Text(
+                                        message.time,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                                  Container(
+                                    constraints: BoxConstraints(
+                                      maxWidth: MediaQuery.of(context).size.width * 0.7,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: message.isMe
+                                          ? const Color(0xFFE6E6FA) // 라벤더색
+                                          : const Color(0xFFF0F0F0), // 회색
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      message.text,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                  if (!message.isMe)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 4),
+                                      child: Text(
+                                        message.time,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 );
               },
             ),
